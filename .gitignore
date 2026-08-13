@@ -1,0 +1,17 @@
+node_modules
+.next
+.env
+.env.local
+.env.*
+!.env.example
+coverage
+*.log
+prisma/dev.db
+outputs/
+work/
+.DS_Store
+Thumbs.db
+*.pem
+*.key
+*.pfx
+*.p12
