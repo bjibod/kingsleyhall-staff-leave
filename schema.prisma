@@ -1,0 +1,321 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserStatus {
+  INVITED
+  ACTIVE
+  SUSPENDED
+  DISABLED
+}
+
+enum EmploymentStatus {
+  ACTIVE
+  ON_LEAVE
+  TERMINATED
+}
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  TERM_TIME
+  FIXED_TERM
+  OTHER
+}
+
+enum LeaveYearStatus {
+  DRAFT
+  ACTIVE
+  CLOSED
+}
+
+enum LeaveRequestStatus {
+  DRAFT
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum LeavePeriod {
+  FULL_DAY
+  AM
+  PM
+}
+
+enum AuditAction {
+  EMPLOYEE_CREATED
+  EMPLOYEE_UPDATED
+  ENTITLEMENT_ADJUSTED
+  LEAVE_SUBMITTED
+  LEAVE_APPROVED
+  LEAVE_REJECTED
+  LEAVE_CANCELLED
+  MANAGER_CHANGED
+  USER_ROLE_CHANGED
+}
+
+model Organisation {
+  id                    String        @id @default(cuid())
+  name                  String
+  legalName             String?
+  timezone              String        @default("Europe/London")
+  defaultLeaveYearStart String        @default("04-01")
+  employees             Employee[]
+  locations             Location[]
+  departments           Department[]
+  leaveYears            LeaveYear[]
+  leaveTypes            LeaveType[]
+  bankHolidays          BankHoliday[]
+  auditLogs             AuditLog[]
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+}
+
+model User {
+  id            String         @id @default(cuid())
+  email         String         @unique
+  passwordHash  String
+  status        UserStatus     @default(INVITED)
+  lastLoginAt   DateTime?
+  employeeId    String?        @unique
+  employee      Employee?      @relation(fields: [employeeId], references: [id])
+  roles         UserRole[]
+  sessions      Session[]
+  notifications Notification[]
+  auditActions  AuditLog[]     @relation("AuditActor")
+  reviewedLeave LeaveRequest[] @relation("LeaveReviewer")
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}
+
+model Role {
+  id          String     @id @default(cuid())
+  name        String     @unique
+  description String?
+  users       UserRole[]
+}
+
+model UserRole {
+  userId String
+  roleId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Employee {
+  id               String             @id @default(cuid())
+  organisationId   String
+  organisation     Organisation       @relation(fields: [organisationId], references: [id])
+  employeeNumber   String
+  firstName        String
+  lastName         String
+  workEmail        String
+  phone            String?
+  jobTitle         String
+  locationId       String?
+  location         Location?          @relation(fields: [locationId], references: [id])
+  departmentId     String?
+  department       Department?        @relation(fields: [departmentId], references: [id])
+  managerId        String?
+  manager          Employee?          @relation("ManagerReports", fields: [managerId], references: [id])
+  reports          Employee[]         @relation("ManagerReports")
+  employmentStatus EmploymentStatus   @default(ACTIVE)
+  employmentType   EmploymentType
+  startDate        DateTime
+  endDate          DateTime?
+  active           Boolean            @default(true)
+  user             User?
+  workingPatterns  WorkingPattern[]
+  entitlements     LeaveEntitlement[]
+  leaveRequests    LeaveRequest[]
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  @@unique([organisationId, employeeNumber])
+  @@unique([organisationId, workEmail])
+  @@index([organisationId, managerId])
+  @@index([organisationId, locationId, departmentId])
+}
+
+model Location {
+  id             String       @id @default(cuid())
+  organisationId String
+  organisation   Organisation @relation(fields: [organisationId], references: [id])
+  name           String
+  address        String?
+  active         Boolean      @default(true)
+  employees      Employee[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organisationId, name])
+}
+
+model Department {
+  id             String       @id @default(cuid())
+  organisationId String
+  organisation   Organisation @relation(fields: [organisationId], references: [id])
+  name           String
+  active         Boolean      @default(true)
+  employees      Employee[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organisationId, name])
+}
+
+model WorkingPattern {
+  id             String    @id @default(cuid())
+  employeeId     String
+  employee       Employee  @relation(fields: [employeeId], references: [id])
+  mondayHours    Decimal   @db.Decimal(5, 2)
+  tuesdayHours   Decimal   @db.Decimal(5, 2)
+  wednesdayHours Decimal   @db.Decimal(5, 2)
+  thursdayHours  Decimal   @db.Decimal(5, 2)
+  fridayHours    Decimal   @db.Decimal(5, 2)
+  saturdayHours  Decimal   @db.Decimal(5, 2)
+  sundayHours    Decimal   @db.Decimal(5, 2)
+  effectiveFrom  DateTime  @db.Date
+  effectiveTo    DateTime? @db.Date
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([employeeId, effectiveFrom, effectiveTo])
+}
+
+model LeaveYear {
+  id             String             @id @default(cuid())
+  organisationId String
+  organisation   Organisation       @relation(fields: [organisationId], references: [id])
+  name           String
+  startDate      DateTime           @db.Date
+  endDate        DateTime           @db.Date
+  status         LeaveYearStatus    @default(DRAFT)
+  entitlements   LeaveEntitlement[]
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@unique([organisationId, name])
+  @@index([organisationId, startDate, endDate])
+}
+
+model LeaveEntitlement {
+  id                    String    @id @default(cuid())
+  employeeId            String
+  employee              Employee  @relation(fields: [employeeId], references: [id])
+  leaveYearId           String
+  leaveYear             LeaveYear @relation(fields: [leaveYearId], references: [id])
+  entitlementHours      Decimal   @db.Decimal(7, 2)
+  carriedForwardHours   Decimal   @default(0) @db.Decimal(7, 2)
+  manualAdjustmentHours Decimal   @default(0) @db.Decimal(7, 2)
+  adjustmentReason      String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@unique([employeeId, leaveYearId])
+}
+
+model LeaveType {
+  id                           String         @id @default(cuid())
+  organisationId               String
+  organisation                 Organisation   @relation(fields: [organisationId], references: [id])
+  name                         String
+  code                         String
+  deductsFromAnnualEntitlement Boolean        @default(true)
+  requiresApproval             Boolean        @default(true)
+  active                       Boolean        @default(true)
+  requests                     LeaveRequest[]
+  createdAt                    DateTime       @default(now())
+  updatedAt                    DateTime       @updatedAt
+
+  @@unique([organisationId, code])
+}
+
+model LeaveRequest {
+  id                      String             @id @default(cuid())
+  employeeId              String
+  employee                Employee           @relation(fields: [employeeId], references: [id])
+  leaveTypeId             String
+  leaveType               LeaveType          @relation(fields: [leaveTypeId], references: [id])
+  startDate               DateTime           @db.Date
+  endDate                 DateTime           @db.Date
+  startPeriod             LeavePeriod        @default(FULL_DAY)
+  endPeriod               LeavePeriod        @default(FULL_DAY)
+  requestedHours          Decimal            @db.Decimal(7, 2)
+  employeeNote            String?
+  status                  LeaveRequestStatus @default(DRAFT)
+  submittedAt             DateTime?
+  reviewedBy              String?
+  reviewer                User?              @relation("LeaveReviewer", fields: [reviewedBy], references: [id])
+  reviewedAt              DateTime?
+  managerComment          String?
+  cancellationRequestedAt DateTime?
+  cancelledAt             DateTime?
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
+
+  @@index([employeeId, status, startDate, endDate])
+}
+
+model BankHoliday {
+  id               String       @id @default(cuid())
+  organisationId   String
+  organisation     Organisation @relation(fields: [organisationId], references: [id])
+  name             String
+  date             DateTime     @db.Date
+  locationOrRegion String?
+  active           Boolean      @default(true)
+
+  @@unique([organisationId, date, locationOrRegion])
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  title     String
+  message   String
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt, createdAt])
+}
+
+model AuditLog {
+  id             String       @id @default(cuid())
+  organisationId String
+  organisation   Organisation @relation(fields: [organisationId], references: [id])
+  actorUserId    String?
+  actor          User?        @relation("AuditActor", fields: [actorUserId], references: [id])
+  action         AuditAction
+  entityType     String
+  entityId       String
+  previousValue  Json?
+  newValue       Json?
+  ipAddress      String?
+  createdAt      DateTime     @default(now())
+
+  @@index([organisationId, createdAt])
+  @@index([entityType, entityId])
+}
