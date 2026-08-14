@@ -1,6 +1,11 @@
 import { timingSafeEqual } from "node:crypto";
 
-export function monitoringTestAuthorised(env: NodeJS.ProcessEnv, authorization: string | null) {
+type MonitoringTestEnvironment = {
+  DEPLOYMENT_ENV?: string;
+  MONITORING_TEST_SECRET?: string;
+};
+
+export function monitoringTestAuthorised(env: MonitoringTestEnvironment, authorization: string | null) {
   if (env.DEPLOYMENT_ENV !== "staging") return false;
 
   const secret = env.MONITORING_TEST_SECRET;
