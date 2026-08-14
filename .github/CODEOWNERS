@@ -1,0 +1,9 @@
+# Repository owner is the temporary code owner until Kingsley Hall assigns teams.
+# Replace this account with approved GitHub teams as governance matures.
+* @bjibod
+
+# Security- and data-sensitive areas require explicit owner review.
+/src/features/auth/ @bjibod
+/src/features/leave/ @bjibod
+/prisma/ @bjibod
+/.github/workflows/ @bjibod

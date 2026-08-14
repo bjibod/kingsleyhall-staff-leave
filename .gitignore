@@ -15,3 +15,16 @@ Thumbs.db
 *.key
 *.pfx
 *.p12
+.idea/
+.vscode/
+*.swp
+*.tmp
+*.bak
+*.orig
+*.tsbuildinfo
+*.crt
+*.cer
+*.der
+*.jks
+*.keystore
+!.github/
