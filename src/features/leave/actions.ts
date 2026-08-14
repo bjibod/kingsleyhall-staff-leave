@@ -8,6 +8,7 @@ import { serializableTransaction } from "@/lib/transaction";
 import { canReviewRequest } from "./approval-policy";
 import { calculateRequestedHours, validateLeaveRequest } from "./calculation";
 import { leaveDecisionSchema, leaveRequestSchema } from "./validation";
+import { canCancelRequest, cancellationOutcome } from "./cancellation-policy";
 
 export type LeaveActionState = { error?: string; preview?: { hours: number; workingDays: number; available: number; after: number } };
 
@@ -123,8 +124,8 @@ export async function cancelLeaveRequest(formData: FormData) {
   const id = String(formData.get("id"));
   await serializableTransaction(db, async transaction => {
     const request = await transaction.leaveRequest.findUnique({ where: { id } });
-    if (!request || request.employeeId !== user.employee!.id || !["PENDING", "APPROVED"].includes(request.status) || request.startDate <= new Date()) throw new Error("Request cannot be cancelled");
-    if (request.status === "APPROVED") {
+    if (!request || !canCancelRequest({ actorEmployeeId: user.employee!.id, requestEmployeeId: request.employeeId, status: request.status, startDate: request.startDate })) throw new Error("Request cannot be cancelled");
+    if (cancellationOutcome(request.status as "PENDING" | "APPROVED") === "REQUEST_REVIEW") {
       await transaction.leaveRequest.update({ where: { id }, data: { cancellationRequestedAt: new Date() } });
       return;
     }
