@@ -6,7 +6,9 @@ const serverConfigSchema = z.object({
   APP_URL: z.string().url(),
   APP_TIMEZONE: z.string().min(1).default("Europe/London"),
   AUTH_SECRET: z.string().min(32),
-  DATABASE_URL: z.string().url()
+  DATABASE_URL: z.string().url(),
+  DEPLOYMENT_ENV: z.enum(["development", "preview", "staging", "production", "test"]).default("development"),
+  RELEASE_SHA: z.string().min(1).default("unknown")
 });
 
 export type ServerConfig = z.infer<typeof serverConfigSchema>;

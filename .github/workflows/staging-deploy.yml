@@ -1,0 +1,99 @@
+name: Deploy staging
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_sha:
+        description: Full commit SHA from main to deploy
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: staging-deployment
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: staging
+    env:
+      DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+      DEPLOY_HOOK: ${{ secrets.STAGING_DEPLOY_HOOK }}
+      HEALTH_URL: ${{ vars.STAGING_HEALTH_URL }}
+      IMAGE: ghcr.io/${{ github.repository }}
+    steps:
+      - name: Validate requested release
+        shell: bash
+        run: |
+          [[ "${{ inputs.release_sha }}" =~ ^[0-9a-f]{40}$ ]] || { echo "A full 40-character commit SHA is required"; exit 1; }
+
+      - name: Checkout immutable release
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_sha }}
+
+      - name: Verify release belongs to main
+        shell: bash
+        run: |
+          git fetch origin main --depth=100
+          git merge-base --is-ancestor HEAD origin/main || { echo "Release is not on main"; exit 1; }
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply staging migrations
+        run: pnpm db:migrate:deploy
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and publish immutable staging image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ inputs.release_sha }}
+            ${{ env.IMAGE }}:staging
+
+      - name: Trigger staging host deployment
+        if: ${{ env.DEPLOY_HOOK != '' }}
+        run: curl --fail --silent --show-error --retry 3 --request POST "$DEPLOY_HOOK"
+
+      - name: Verify staging health
+        if: ${{ env.HEALTH_URL != '' }}
+        shell: bash
+        run: |
+          for attempt in {1..30}; do
+            body="$(curl --fail --silent --show-error "$HEALTH_URL" || true)"
+            if echo "$body" | grep -q '"status":"ok"' && echo "$body" | grep -q '"environment":"staging"'; then
+              echo "Staging is healthy"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Staging did not become healthy"
+          exit 1
