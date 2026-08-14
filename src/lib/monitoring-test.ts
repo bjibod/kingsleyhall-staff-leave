@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 
 type MonitoringTestEnvironment = {
+  [key: string]: string | undefined;
   DEPLOYMENT_ENV?: string;
   MONITORING_TEST_SECRET?: string;
 };
