@@ -39,15 +39,17 @@ Create environment-scoped alerts for:
 
 Assign every alert to a named role, not an individual-only account. Link alerts to the incident and rollback procedures. Resolve an issue only after the fix is deployed and verified.
 
-## Staging verification
+## Staging verification record
 
-1. Deploy this branch to staging with the staging DSN and release SHA configured.
-2. Set a unique staging-only `MONITORING_TEST_SECRET` of at least 32 characters in the hosting secret store. Never configure this variable in production.
-3. Send an authenticated `POST` to `/api/monitoring-test` using `Authorization: Bearer <MONITORING_TEST_SECRET>`. The endpoint returns `404` outside staging or when authentication fails, captures only a fixed synthetic error, and returns `202` after Sentry accepts the event.
-4. Confirm Sentry records the exception under environment `staging` and the expected release.
-5. Inspect the event and confirm there is no request body, cookie, authorization header, user record, email, reset/invitation token or query string.
-6. Confirm a transaction trace appears at the configured sampling rate and source maps resolve application frames.
-7. Remove the intentional error mechanism in the same branch, run CI, and redeploy. No intentional test-error route may be merged to `main` or promoted to production.
+Monitoring delivery was verified on 15 August 2026 using a temporary staging-only, bearer-protected route that captured a fixed synthetic error and no employee data.
+
+- Environment: `staging`
+- Verified release: `47591bc071f2041c2a8104f7271d04f972c92a32`
+- Endpoint result: `202 {"status":"captured"}`
+- Sentry issue: `JAVASCRIPT-NEXTJS-2`
+- Event: `Controlled staging Sentry verification`
+
+The event was inspected to confirm the expected environment and release. The temporary route, authorization helper, test secret example and Vercel secret were scheduled for removal immediately after verification. No intentional error route may be promoted to production.
 
 ## Incident workflow
 
