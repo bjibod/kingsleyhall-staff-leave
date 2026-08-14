@@ -216,6 +216,7 @@ model LeaveYear {
   updatedAt      DateTime           @updatedAt
 
   @@unique([organisationId, name])
+  @@index([organisationId, status])
   @@index([organisationId, startDate, endDate])
 }
 
@@ -249,6 +250,7 @@ model LeaveType {
   updatedAt                    DateTime       @updatedAt
 
   @@unique([organisationId, code])
+  @@index([organisationId, active])
 }
 
 model LeaveRequest {
@@ -275,6 +277,8 @@ model LeaveRequest {
   updatedAt               DateTime           @updatedAt
 
   @@index([employeeId, status, startDate, endDate])
+  @@index([status, startDate, endDate])
+  @@index([reviewedBy, reviewedAt])
 }
 
 model BankHoliday {
@@ -285,8 +289,11 @@ model BankHoliday {
   date             DateTime     @db.Date
   locationOrRegion String?
   active           Boolean      @default(true)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
 
   @@unique([organisationId, date, locationOrRegion])
+  @@index([organisationId, active, date])
 }
 
 model Notification {
