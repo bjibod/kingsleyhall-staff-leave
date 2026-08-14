@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const publicRoutes = ["/login", "/forgot-password", "/reset-password"];
+const publicRoutes = ["/login", "/forgot-password", "/reset-password", "/activate-account"];
 export function proxy(request: NextRequest) {
   if (publicRoutes.some((route) => request.nextUrl.pathname.startsWith(route))) return NextResponse.next();
   if (!request.cookies.get("kh_leave_session")) return NextResponse.redirect(new URL("/login", request.url));
