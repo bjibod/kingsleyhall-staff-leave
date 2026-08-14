@@ -2,6 +2,7 @@
 
 import { randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
+import * as Sentry from "@sentry/nextjs";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getCurrentUser } from "@/features/auth/session";
@@ -56,7 +57,7 @@ export async function createEmployee(_: OnboardingState, formData: FormData): Pr
       await tx.auditLog.create({ data: { organisationId, actorUserId: actor.id, action: "EMPLOYEE_CREATED", entityType: "Employee", entityId: employee.id, newValue: { employeeNumber: employee.employeeNumber, status: "INVITED" } } });
       return { employeeId: employee.id, userId: user.id, email: user.email };
     });
-    try { await deliverInvitation(created.userId, created.email); } catch (error) { console.error(JSON.stringify({ event: "invitation_delivery_failed", userId: created.userId, error: error instanceof Error ? error.name : "unknown" })); }
+    try { await deliverInvitation(created.userId, created.email); } catch (error) { Sentry.captureException(error, { tags: { operation: "invitation_delivery" } }); console.error(JSON.stringify({ event: "invitation_delivery_failed", error: error instanceof Error ? error.name : "unknown" })); }
     redirect(`/admin/employees/${created.employeeId}`);
   } catch (error) {
     if (error && typeof error === "object" && "code" in error && error.code === "P2002") return { error: "That employee number or work email is already in use." };

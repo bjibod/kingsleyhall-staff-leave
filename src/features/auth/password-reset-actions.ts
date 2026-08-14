@@ -1,6 +1,7 @@
 "use server";
 
 import bcrypt from "bcryptjs";
+import * as Sentry from "@sentry/nextjs";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { serverConfig } from "@/lib/config";
@@ -30,6 +31,7 @@ export async function requestPasswordReset(_: PasswordResetState, formData: Form
     url.searchParams.set("token", token);
     await emailProvider().send({ to: user.email, subject: "Reset your Kingsley Hall leave password", text: `Use this one-time link within 30 minutes: ${url.toString()}\n\nIf you did not request this, ignore this email.` });
   } catch (error) {
+    Sentry.captureException(error, { tags: { operation: "password_reset_delivery" } });
     console.error(JSON.stringify({ event: "password_reset_delivery_failed", error: error instanceof Error ? error.name : "unknown" }));
   }
   return { success: genericRequestMessage };
