@@ -1,0 +1,55 @@
+name: Production database migration
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_sha:
+        description: Full SHA of the staged Vercel production deployment
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-database-migration
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    env:
+      DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+    steps:
+      - name: Validate requested release
+        shell: bash
+        run: |
+          [[ "${{ inputs.release_sha }}" =~ ^[0-9a-f]{40}$ ]] || { echo "A full 40-character commit SHA is required"; exit 1; }
+
+      - name: Checkout immutable release
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_sha }}
+          fetch-depth: 0
+
+      - name: Verify release belongs to main
+        run: git merge-base --is-ancestor HEAD origin/main
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply production migrations
+        run: pnpm db:migrate:deploy

@@ -5,6 +5,8 @@ node_modules
 .env.*
 !.env.example
 !.env.staging.example
+!.env.production.example
+.vercel
 coverage
 *.log
 prisma/dev.db
