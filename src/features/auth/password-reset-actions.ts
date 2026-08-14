@@ -20,16 +20,17 @@ export async function requestPasswordReset(_: PasswordResetState, formData: Form
   if (!user || user.status !== "ACTIVE") return { success: genericRequestMessage };
 
   const token = generateResetToken();
+  const tokenHash = hashResetToken(token);
   const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
   await db.$transaction([
     db.passwordResetToken.deleteMany({ where: { userId: user.id, usedAt: null } }),
-    db.passwordResetToken.create({ data: { tokenHash: hashResetToken(token), userId: user.id, expiresAt } })
+    db.passwordResetToken.create({ data: { tokenHash, userId: user.id, expiresAt } })
   ]);
   try {
     const config = serverConfig();
     const url = new URL("/reset-password", config.APP_URL);
     url.searchParams.set("token", token);
-    await emailProvider().send({ to: user.email, subject: "Reset your Kingsley Hall leave password", text: `Use this one-time link within 30 minutes: ${url.toString()}\n\nIf you did not request this, ignore this email.` });
+    await emailProvider().send({ to: user.email, subject: "Reset your Kingsley Hall leave password", text: `Use this one-time link within 30 minutes: ${url.toString()}\n\nIf you did not request this, ignore this email.`, tag: "password-reset", idempotencyKey: `password-reset-${tokenHash}` });
   } catch (error) {
     Sentry.captureException(error, { tags: { operation: "password_reset_delivery" } });
     console.error(JSON.stringify({ event: "password_reset_delivery_failed", error: error instanceof Error ? error.name : "unknown" }));

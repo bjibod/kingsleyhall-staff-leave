@@ -30,7 +30,7 @@ async function deliverInvitation(userId: string, email: string) {
   const token = generateInvitationToken();
   await db.$transaction([db.accountInvitationToken.deleteMany({ where: { userId, usedAt: null } }), db.accountInvitationToken.create({ data: { userId, tokenHash: hashInvitationToken(token), expiresAt: invitationExpiry() } })]);
   const url = new URL("/activate-account", serverConfig().APP_URL); url.searchParams.set("token", token);
-  await emailProvider().send({ to: email, subject: "Activate your Kingsley Hall staff leave account", text: `Welcome to Kingsley Hall Staff Leave. Create your password within 72 hours: ${url.toString()}\n\nIf you were not expecting this invitation, contact your administrator.` });
+  await emailProvider().send({ to: email, subject: "Activate your Kingsley Hall staff leave account", text: `Welcome to Kingsley Hall Staff Leave. Create your password within 72 hours: ${url.toString()}\n\nIf you were not expecting this invitation, contact your administrator.`, tag: "account-invitation", idempotencyKey: `account-invitation-${hashInvitationToken(token)}` });
 }
 
 export async function createEmployee(_: OnboardingState, formData: FormData): Promise<OnboardingState> {

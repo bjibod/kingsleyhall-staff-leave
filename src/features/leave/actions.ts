@@ -9,6 +9,10 @@ import { canReviewRequest } from "./approval-policy";
 import { calculateRequestedHours, validateLeaveRequest } from "./calculation";
 import { leaveDecisionSchema, leaveRequestSchema } from "./validation";
 import { canCancelRequest, cancellationOutcome } from "./cancellation-policy";
+import { emailProvider, type EmailMessage } from "@/services/email";
+import { leaveCancelledEmail, leaveDecisionEmail, leaveSubmittedEmail, managerApprovalEmail, managerCancellationEmail } from "@/services/email-templates";
+import { serverConfig } from "@/lib/config";
+import * as Sentry from "@sentry/nextjs";
 
 export type LeaveActionState = { error?: string; preview?: { hours: number; workingDays: number; available: number; after: number } };
 
@@ -18,6 +22,11 @@ const issueMessage = (issue: string, available: number, requested: number) => ({
   INSUFFICIENT_ENTITLEMENT: `You have ${available} hours available but this request requires ${requested} hours.`,
   START_AFTER_END: "Start date must be before end date."
 }[issue] ?? "The request is invalid.");
+
+async function deliverLeaveEmails(messages: EmailMessage[]) {
+  const results = await Promise.allSettled(messages.map(message => emailProvider().send(message)));
+  results.forEach((result, index) => { if (result.status === "rejected") Sentry.captureException(result.reason, { tags: { operation: "leave_email_delivery", email_tag: messages[index].tag ?? "unknown" } }); });
+}
 
 export async function submitLeaveRequest(_: LeaveActionState, formData: FormData): Promise<LeaveActionState> {
   const parsed = leaveRequestSchema.safeParse(Object.fromEntries(formData));
@@ -78,9 +87,11 @@ export async function submitLeaveRequest(_: LeaveActionState, formData: FormData
         { userId: approver.id, type: "APPROVAL_REQUIRED", title: "New Request Awaiting Approval", message: `${user.employee!.firstName} ${user.employee!.lastName} requested ${calculation.hours} hours.` }
       ] });
       await transaction.auditLog.create({ data: { organisationId: user.employee!.organisationId, actorUserId: user.id, action: "LEAVE_SUBMITTED", entityType: "LeaveRequest", entityId: request.id, newValue: { status: "PENDING", requestedHours: calculation.hours } } });
-      return {};
+      const details = { id: request.id, startDate: parsed.data.startDate, endDate: parsed.data.endDate, hours: calculation.hours, appUrl: serverConfig().APP_URL };
+      return { emails: [leaveSubmittedEmail(user.email, details), managerApprovalEmail(approver.email, `${user.employee!.firstName} ${user.employee!.lastName}`, details)] };
     });
     if (result.error) return result;
+    await deliverLeaveEmails(result.emails ?? []);
   } catch { return { error: "The request could not be submitted because the leave data changed. Please try again." }; }
   revalidatePath("/leave");
   redirect("/leave");
@@ -93,7 +104,7 @@ export async function reviewLeaveRequest(formData: FormData) {
   if (!parsed.success) throw new Error("Invalid decision");
   const { id, decision, comment } = parsed.data;
 
-  await serializableTransaction(db, async transaction => {
+  const reviewEmail = await serializableTransaction(db, async transaction => {
     const request = await transaction.leaveRequest.findUnique({ where: { id }, include: { employee: { include: { user: true } }, leaveType: true } });
     if (!request || request.status !== "PENDING") throw new Error("Request unavailable");
     const permitted = canReviewRequest({ actorUserId: user.id, actorRoles: user.roles, actorEmployeeId: user.employee!.id, requestEmployeeId: request.employeeId, requestManagerId: request.employee.managerId, sameOrganisation: user.employee!.organisationId === request.employee.organisationId });
@@ -114,7 +125,10 @@ export async function reviewLeaveRequest(formData: FormData) {
     if (updated.count !== 1) throw new Error("Request unavailable");
     if (request.employee.user) await transaction.notification.create({ data: { userId: request.employee.user.id, type: `LEAVE_${decision}`, title: decision === "APPROVED" ? "Leave Approved" : "Leave Rejected", message: `${request.startDate.toISOString().slice(0, 10)} to ${request.endDate.toISOString().slice(0, 10)} · ${Number(request.requestedHours)} hours${comment ? ` · ${comment}` : ""}` } });
     await transaction.auditLog.create({ data: { organisationId: request.employee.organisationId, actorUserId: user.id, action: decision === "APPROVED" ? "LEAVE_APPROVED" : "LEAVE_REJECTED", entityType: "LeaveRequest", entityId: id, previousValue: { status: "PENDING" }, newValue: { status: decision, comment } } });
+    if (!request.employee.user) return null;
+    return leaveDecisionEmail(request.employee.user.email, decision, { id, startDate: request.startDate.toISOString().slice(0, 10), endDate: request.endDate.toISOString().slice(0, 10), hours: Number(request.requestedHours), appUrl: serverConfig().APP_URL });
   });
+  if (reviewEmail) await deliverLeaveEmails([reviewEmail]);
   revalidatePath("/manager"); revalidatePath(`/manager/requests/${id}`); redirect("/manager");
 }
 
@@ -122,15 +136,18 @@ export async function cancelLeaveRequest(formData: FormData) {
   const user = await getCurrentUser();
   if (!user?.employee) throw new Error("Unauthorised");
   const id = String(formData.get("id"));
-  await serializableTransaction(db, async transaction => {
-    const request = await transaction.leaveRequest.findUnique({ where: { id } });
+  const cancellationEmails = await serializableTransaction(db, async transaction => {
+    const request = await transaction.leaveRequest.findUnique({ where: { id }, include: { employee: { include: { manager: { include: { user: true } } } } } });
     if (!request || !canCancelRequest({ actorEmployeeId: user.employee!.id, requestEmployeeId: request.employeeId, status: request.status, startDate: request.startDate })) throw new Error("Request cannot be cancelled");
     if (cancellationOutcome(request.status as "PENDING" | "APPROVED") === "REQUEST_REVIEW") {
       await transaction.leaveRequest.update({ where: { id }, data: { cancellationRequestedAt: new Date() } });
-      return;
+      const details = { id, startDate: request.startDate.toISOString().slice(0, 10), endDate: request.endDate.toISOString().slice(0, 10), hours: Number(request.requestedHours), appUrl: serverConfig().APP_URL };
+      return [leaveCancelledEmail(user.email, details, true), ...(request.employee.manager?.user ? [managerCancellationEmail(request.employee.manager.user.email, `${user.employee!.firstName} ${user.employee!.lastName}`, details)] : [])];
     }
     await transaction.leaveRequest.update({ where: { id }, data: { status: "CANCELLED", cancelledAt: new Date() } });
     await transaction.auditLog.create({ data: { organisationId: user.employee!.organisationId, actorUserId: user.id, action: "LEAVE_CANCELLED", entityType: "LeaveRequest", entityId: id, previousValue: { status: request.status }, newValue: { status: "CANCELLED" } } });
+    return [leaveCancelledEmail(user.email, { id, startDate: request.startDate.toISOString().slice(0, 10), endDate: request.endDate.toISOString().slice(0, 10), hours: Number(request.requestedHours), appUrl: serverConfig().APP_URL }, false)];
   });
+  await deliverLeaveEmails(cancellationEmails);
   revalidatePath("/leave");
 }
