@@ -18,16 +18,16 @@ Next.js, React, TypeScript, PostgreSQL, Prisma, Zod, bcrypt and Vitest. See [ARC
 2. Create the PostgreSQL database referenced by `DATABASE_URL`.
 3. Run `pnpm install`.
 4. Run `pnpm db:migrate --name foundation`.
-5. Run `pnpm db:seed`.
+5. To create fictional local fixtures only, set `ALLOW_DEMO_SEED=true`, choose a unique `DEMO_SEED_PASSWORD` of at least 14 characters, and run `pnpm db:seed:development`. The command refuses production and non-local database URLs.
 6. Run `pnpm dev` and open `http://localhost:3000`.
 
-## Demo account
+## Development fixtures
 
-The Phase 1 seed creates `admin@kingsleyhall.test` with temporary password `Demo-Change-Me-2026!`. This is development data only; never use it in production.
+Development fixtures use fictional `.test` accounts and the locally supplied `DEMO_SEED_PASSWORD`. No demo password is stored in source. Never reuse a development password or run fixture seeding against staging or production.
 
 ## Testing and production build
 
-Run `pnpm test`, `pnpm lint`, and `pnpm build`. Production requires HTTPS, a persistent managed PostgreSQL database, secure environment secrets, backups and central error logging. Run checked-in migrations during deployment before starting the application.
+Run `pnpm test`, `pnpm lint`, and `pnpm build`. Production requires HTTPS, a persistent managed PostgreSQL database, secure environment secrets, backups and central error logging. Run `pnpm db:migrate:deploy` during deployment. Production administrators must be onboarded through the secure invitation/reset workflow once implemented; fixture seeding is not a production initialisation mechanism.
 
 ## Current delivery status
 

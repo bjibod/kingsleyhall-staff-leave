@@ -1,8 +1,10 @@
 import { PrismaClient, EmploymentType } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { developmentSeedConfig } from "../src/lib/development-seed";
 
+const config = developmentSeedConfig();
 const prisma = new PrismaClient();
-const passwordHash = bcrypt.hashSync("Demo-Change-Me-2026!", 12);
+const passwordHash = bcrypt.hashSync(config.password, 12);
 
 const people: Array<[string, string, string, string, EmploymentType, number[]]> = [
   ["KH0001", "Alex", "Admin", "SUPER_ADMIN", "FULL_TIME", [8,8,8,8,8,0,0]],
@@ -23,7 +25,7 @@ const people: Array<[string, string, string, string, EmploymentType, number[]]> 
 ];
 
 async function main() {
-  const organisation = await prisma.organisation.upsert({ where: { id: "kingsley-hall-demo" }, update: {}, create: { id: "kingsley-hall-demo", name: "Kingsley Hall", legalName: "Kingsley Hall" } });
+  const organisation = await prisma.organisation.upsert({ where: { id: "kingsley-hall-demo" }, update: {}, create: { id: "kingsley-hall-demo", name: "Kingsley Hall Development", legalName: "Kingsley Hall Development" } });
   const roles = new Map<string, string>();
   for (const name of ["EMPLOYEE", "MANAGER", "HR_ADMIN", "SUPER_ADMIN"]) {
     const role = await prisma.role.upsert({ where: { name }, update: {}, create: { name, description: `${name} access` } }); roles.set(name, role.id);
@@ -45,7 +47,7 @@ async function main() {
     if ((await prisma.workingPattern.count({ where: { employeeId: employee.id } })) === 0) await prisma.workingPattern.create({ data: { employeeId: employee.id, mondayHours: hours[0], tuesdayHours: hours[1], wednesdayHours: hours[2], thursdayHours: hours[3], fridayHours: hours[4], saturdayHours: hours[5], sundayHours: hours[6], effectiveFrom: new Date("2024-01-01") } });
     await prisma.leaveEntitlement.upsert({ where: { employeeId_leaveYearId: { employeeId: employee.id, leaveYearId: leaveYear.id } }, update: {}, create: { employeeId: employee.id, leaveYearId: leaveYear.id, entitlementHours: number === "KH0101" ? 80 : 200 } });
   }
-  for (const number of people.filter(p => p[3] === "EMPLOYEE").map(p => p[0])) await prisma.employee.update({ where: { id: employeeIds.get(number)! }, data: { managerId: employeeIds.get("KH0010") } });
+  for (const number of people.filter(person => person[3] === "EMPLOYEE").map(person => person[0])) await prisma.employee.update({ where: { id: employeeIds.get(number)! }, data: { managerId: employeeIds.get("KH0010") } });
   const demoEmployee = employeeIds.get("KH0102")!;
   if ((await prisma.leaveRequest.count({ where: { employeeId: demoEmployee } })) === 0) {
     await prisma.leaveRequest.createMany({ data: [
