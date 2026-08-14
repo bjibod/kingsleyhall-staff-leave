@@ -14,7 +14,7 @@ export async function createSession(userId: string) {
   const expiresAt = new Date(Date.now() + SESSION_DAYS * 86_400_000);
   await db.session.create({ data: { tokenHash: hashSessionToken(token), userId, expiresAt } });
   const jar = await cookies();
-  jar.set(COOKIE_NAME, token, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/", expires: expiresAt });
+  jar.set(COOKIE_NAME, token, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", priority: "high", path: "/", expires: expiresAt });
 }
 
 export async function getCurrentUser() {
