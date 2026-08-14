@@ -2,12 +2,20 @@
   "name": "kingsley-hall-staff-leave",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@9.15.9",
+  "pnpm": {
+    "overrides": {
+      "effect": "3.20.0"
+    }
+  },
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
     "test:watch": "vitest",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
