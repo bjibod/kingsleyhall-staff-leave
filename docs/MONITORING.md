@@ -42,8 +42,8 @@ Assign every alert to a named role, not an individual-only account. Link alerts 
 ## Staging verification
 
 1. Deploy this branch to staging with the staging DSN and release SHA configured.
-2. Temporarily add a protected administrator-only route or a one-line controlled throw in a non-sensitive staging action.
-3. Trigger it once using fictional data.
+2. Set a unique staging-only `MONITORING_TEST_SECRET` of at least 32 characters in the hosting secret store. Never configure this variable in production.
+3. Send an authenticated `POST` to `/api/monitoring-test` using `Authorization: Bearer <MONITORING_TEST_SECRET>`. The endpoint returns `404` outside staging or when authentication fails, captures only a fixed synthetic error, and returns `202` after Sentry accepts the event.
 4. Confirm Sentry records the exception under environment `staging` and the expected release.
 5. Inspect the event and confirm there is no request body, cookie, authorization header, user record, email, reset/invitation token or query string.
 6. Confirm a transaction trace appears at the configured sampling rate and source maps resolve application frames.
