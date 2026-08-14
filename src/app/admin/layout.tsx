@@ -1,0 +1,2 @@
+import { redirect } from "next/navigation";import { getCurrentUser } from "@/features/auth/session";import { AppShell } from "@/components/app-shell";
+export default async function AdminLayout({children}:{children:React.ReactNode}){const user=await getCurrentUser();if(!user?.employee)redirect("/login");if(!user.roles.some(r=>["HR_ADMIN","SUPER_ADMIN"].includes(r)))redirect("/dashboard");return <AppShell roles={user.roles}>{children}</AppShell>}

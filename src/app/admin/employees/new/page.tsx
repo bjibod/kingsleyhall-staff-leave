@@ -1,0 +1,2 @@
+import Link from "next/link";
+export default function NewEmployee(){return <main className="page"><p className="eyebrow">Administration / Employees</p><h1>Add employee</h1><div className="card"><p>The invitation-safe employee creation workflow is database-ready. Use the seeded staff dataset for this build; password invitations require the transactional email provider configuration.</p><p className="muted">No plaintext password is ever sent.</p><Link href="/admin/employees">Back to employees</Link></div></main>}
