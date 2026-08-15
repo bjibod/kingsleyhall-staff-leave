@@ -2,9 +2,15 @@
 
 ## Delivery architecture
 
-The application uses a provider-neutral HTTPS adapter rather than coupling business logic to a vendor SDK. It supports any approved provider or internal gateway accepting bearer-authenticated JSON with `from`, `to`, `subject`, `text`, `replyTo` and `tag` fields. The provider/gateway contract should map the optional `idempotency-key` header to its duplicate-suppression feature.
+The application supports three provider modes:
 
-Console delivery is metadata-only and permitted solely in local development/test. It never prints recipients, message bodies or secure links. Staging rejects console delivery, requires HTTPS and restricts all recipients to `EMAIL_ALLOWED_RECIPIENTS`. Production requires HTTPS but deliberately does not use a test allowlist.
+- `console`: metadata-only local development output. It is rejected in staging and production.
+- `http`: the existing provider-neutral bearer-authenticated HTTPS adapter.
+- `microsoft-graph`: Microsoft 365 app-only delivery through Microsoft Graph.
+
+Microsoft 365 delivery uses the OAuth 2.0 client-credentials flow. The server obtains a short-lived token for `https://graph.microsoft.com/.default` and sends through `POST /v1.0/users/{sender}/sendMail`. Credentials remain server-side in Vercel; no employee signs in and no mailbox password is stored.
+
+Staging requires `EMAIL_ALLOWED_RECIPIENTS`. Production deliberately has no test allowlist.
 
 ## Required journeys
 
@@ -18,33 +24,56 @@ Console delivery is metadata-only and permitted solely in local development/test
 | Pending leave cancelled | Employee | Dates, hours and confirmation |
 | Approved leave cancellation requested | Employee and manager | Dates, hours and review status |
 
-Passwords, session identifiers, cookies, employee notes, leave reasons and manager comments are never included. Invitation/reset URLs are necessary secrets, expire, work once and are sent only to the account address.
+Passwords, session identifiers, cookies, employee notes, leave reasons and manager comments are never included. Invitation and reset URLs expire, work once and are sent only to the account address.
+
+## Microsoft 365 administrator setup
+
+An authorised Microsoft 365 and Exchange administrator must complete this work. The earlier `AADSTS50079` sign-in error means the administrator account must finish Microsoft MFA enrollment before setup can continue.
+
+1. Create a single-tenant Entra app registration named `Kingsley Hall Staff Leave Email`.
+2. Record the Directory (tenant) ID and Application (client) ID.
+3. Under Microsoft Graph API permissions, add the **Application** permission `Mail.Send`.
+4. Grant tenant-wide administrator consent.
+5. Create a time-limited client secret for initial staging. Record its value immediately and set an owner and rotation date. Prefer a certificate or workload identity in a later hardening change.
+6. Create or nominate a dedicated sender mailbox under `@khccc.com`; do not use a personal administrator mailbox.
+7. In Exchange Online, use **Role Based Access Control for Applications** to limit the app to only the dedicated sender mailbox. Do not leave the app able to send as every user.
+8. Verify the mailbox restriction before adding credentials to Vercel.
+
+Microsoft documents `Mail.Send` application permission as administrator-consented and capable of sending as any user unless Exchange access is restricted. Application RBAC is therefore a release requirement.
 
 ## Environment configuration
 
-- `EMAIL_PROVIDER`: `console` locally or `http` for staging/production.
-- `EMAIL_API_URL`: HTTPS provider/gateway endpoint.
-- `EMAIL_API_KEY`: secret bearer credential.
-- `EMAIL_FROM`: verified sender identity.
+For Microsoft 365:
+
+- `EMAIL_PROVIDER=microsoft-graph`
+- `MICROSOFT_TENANT_ID`: Entra Directory (tenant) ID.
+- `MICROSOFT_CLIENT_ID`: app registration Application (client) ID.
+- `MICROSOFT_CLIENT_SECRET`: current secret value; never the secret ID.
+- `MICROSOFT_SENDER_EMAIL`: dedicated authorised sender mailbox.
 - `EMAIL_REPLY_TO`: monitored People/HR mailbox.
-- `EMAIL_ALLOWED_RECIPIENTS`: comma-separated tester addresses, mandatory for HTTP delivery outside production and intentionally blank in production.
+- `EMAIL_ALLOWED_RECIPIENTS`: comma-separated authorised staging testers; blank only in production.
 
-Store credentials in the hosting platform's encrypted environment settings. Use independent sandbox and production API keys, verified senders and suppression lists. Configure SPF, DKIM and DMARC for the sending domain before UAT. Never commit credentials.
+The legacy HTTP adapter additionally uses `EMAIL_API_URL`, `EMAIL_API_KEY` and `EMAIL_FROM`.
 
-## Failure and retry behavior
+Store credentials in Vercel encrypted environment settings. Use independent staging and production app credentials. Never commit credentials. Configure SPF, DKIM and DMARC for `khccc.com` before UAT.
 
-Each send has a 10-second timeout and up to three attempts. Only network failures, HTTP 429 and 5xx responses are retried with short bounded backoff. Permanent 4xx rejections fail immediately. Event-specific idempotency keys prevent duplicate messages where the provider supports them.
+## Failure and retry behaviour
 
-Leave database transactions commit independently of external email. A delivery outage is captured by Sentry and does not roll back an approved leave decision or encourage the user to submit twice. The in-app notification remains authoritative. Invitation and reset request screens also avoid account disclosure when delivery fails.
+Each request has a 10-second timeout and up to three attempts. HTTP 429, 5xx and network failures are retried with bounded backoff. Permanent 4xx rejections fail immediately. Microsoft access tokens are cached in memory until shortly before expiry.
 
-Do not create an unbounded retry loop inside a web request. If sustained provider failures occur, resolve the provider incident and use the invitation resend control where applicable. A durable transactional outbox should be introduced before adding high-volume/background delivery.
+Leave transactions commit independently of external email. Delivery failures are captured by Sentry and do not roll back leave decisions. In-app notifications remain authoritative. Do not create an unbounded retry loop inside a web request.
 
-## Production verification
+## Staging verification
 
-1. Verify sender domain authentication and reply-to mailbox ownership.
-2. In staging, configure only approved tester recipients and send every journey using fictional records.
-3. Confirm links use the staging HTTPS origin, expire as documented and cannot be reused.
-4. Confirm rejected/non-allowlisted recipients fail safely and generate a sanitized monitoring event.
-5. Review delivered messages for passwords, notes, comments, cookies, session data and unnecessary personal data.
-6. Check provider delivery, bounce and complaint dashboards; route alerts to the technical owner.
-7. Repeat a controlled delivery test after production configuration, before staff onboarding begins.
+1. Add the Microsoft values to Vercel Preview and Production scopes used by the staging project.
+2. Set `EMAIL_ALLOWED_RECIPIENTS` to one or more authorised fictional-test recipients.
+3. Redeploy staging.
+4. Test invitation, password reset, submission, approval, rejection and cancellation journeys with fictional records.
+5. Confirm every link uses the staging HTTPS origin and single-use links expire correctly.
+6. Confirm a non-allowlisted address fails safely and creates a sanitised Sentry event.
+7. Confirm the message appears in the dedicated sender mailbox's Sent Items and the recipient's inbox.
+8. Review headers and Microsoft delivery reports; verify SPF, DKIM and DMARC alignment.
+9. Confirm no passwords, comments, leave reasons, cookies, tokens other than the necessary one-time link, or unnecessary staff data are included.
+10. Rotate the staging secret after the controlled test if it was exposed to anyone during setup.
+
+Do not enable unrestricted production delivery until the staging evidence and mailbox-scoping evidence have been approved.
